@@ -12,11 +12,48 @@ def _isArrayLike(obj):
     return hasattr(obj, '__iter__') and hasattr(obj, '__len__')
 
 
+class PiCANet_L(nn.Module):
+    def __init__(self, in_channel):
+        super(PiCANet_L, self).__init__()
+        self.conv1 = nn.Conv2d(in_channel, 128, kernel_size=7, dilation=2, padding=6)
+        self.conv2 = nn.Conv2d(128, 49, kernel_size=1)
+
+    def forward(self, *input):
+        x = input[0]
+        size = x.size()
+        kernel = self.conv1(x)
+        kernel = self.conv2(kernel)
+        kernel = F.softmax(kernel, 1)
+        kernel = torch.reshape(kernel, (size[0] * size[2] * size[3], 1, 1, 7, 7))
+        # fmap = []
+        # x = torch.unsqueeze(x, 0)
+        x = F.pad(x, (6, 6, 6, 6))
+        # print(torch.cuda.memory_allocated() / 1024 / 1024)
+        patch = x.unfold(2, 13, 1).unfold(3, 13, 1).contiguous().view(1, -1, size[1], 13, 13)
+        # print(torch.cuda.memory_allocated() / 1024 / 1024)
+        x = F.conv3d(input=patch, weight=kernel, bias=None, stride=1, padding=0, dilation=(1, 2, 2),
+                     groups=size[0] * size[2] * size[3])
+        x = x.view(size[0], size[1], size[2], size[3])
+        """
+        for i in range(size[2]):
+            for j in range(size[3]):
+                print(torch.cuda.memory_allocated() / 1024 / 1024)
+                pix = F.conv3d(input=F.pad(x, (6 - j, 7 + j - size[3], 6 - i, 7 + i - size[2])),
+                               weight=kernel[:, :, :, :, :, i, j],
+                               dilation=(1, 2, 2), groups=size[0])
+                print(torch.cuda.memory_allocated() / 1024 / 1024)
+                fmap.append(pix)
+        x = torch.cat(fmap, 3)
+        x = torch.reshape(x, (size[0], size[1], size[2], size[3]))
+        """
+        return x
+
+
 class Renet(nn.Module):
     """
     This Renet is implemented according to paper
     """
-    def __init__(self, inplane, outchannel = 256, patch_size = 1, LSTM_channel = 32):
+    def __init__(self, inchannel, LSTM_channel = 32, outchannel = 256):
         """
         patch size = 1 and LSTM channel = 256 is default setting according to the origin code.
         :param inplane: input channel size.
@@ -30,68 +67,36 @@ class Renet(nn.Module):
         # Please change this number manually.
         #################
         super(Renet, self).__init__()
-        self.patch_size = patch_size
-        self.horizontal_LSTM = nn.LSTM(input_size=inplane,
+        self.horizontal_LSTM = nn.LSTM(input_size=inchannel,
                                        hidden_size=LSTM_channel,
                                        batch_first=True,
                                        bidirectional=True)
-        self.vertical_LSTM = nn.LSTM(input_size=inplane,
+        self.vertical_LSTM = nn.LSTM(input_size=inchannel,
                                      hidden_size=LSTM_channel,
                                      batch_first=True,
                                      bidirectional=True)
         self.conv = nn.Conv2d(LSTM_channel, outchannel, 1)
         self.bn = nn.BatchNorm2d(outchannel)
 
-
     def forward(self, *input):
-        # input is (batch, channel, width, height)
-
-        # Here we follow PiCANet which we first flip horizontally twice,
-        # Then vertically twice,
         x = input[0]
-        print('x:',x.size())
-        vertical_fwd_concat = []
-        vertical_inv_concat = []
-        horizon_fwd_concat = []
-        horizon_inv_concat = []
-
-        width, height = x.size()[2], x.size()[3]
-        print('width:',width)
-        width_per_patch = int(width / self.patch_size)
-        print('width per patch:',width_per_patch)
-        height_per_patch = int(height / self.patch_size)
-        #assert width_per_patch.is_interger()
-        #assert height_per_patch.is_interger()
-        #######
-        # use LSTM horizontally forward and backward
+        vertical_concat = []
+        size = x.size()
+        width, height = size[2], size[3]
+        assert width == height
+        x = torch.transpose(x, 1, 3)
         for i in range(width):
-            lstm_x = x[:, :, i]
-            print('lstm_x:',lstm_x.size())
-            lstm_input = lstm_x.view(lstm_x.size()[0], lstm_x.size()[1], -1)
-            print('lstm_input:',lstm_input.size())
-            horizon_fwd, _ = self.horizontal_LSTM(lstm_input)
-            print('horizon_fwd:',horizon_fwd.size())
-            horizon_fwd = horizon_fwd.view(horizon_fwd.size()[0],horizon_fwd.size()[1],horizon_fwd.size()[2],1)
-            if i == 0:
-                a = horizon_fwd
-            else:
-                a = torch.cat([a,horizon_fwd],dim=-1)
-            #horizon_fwd_concat.append(horizon_fwd)
-        #x_horizon_fwd = torch.stack(horizon_fwd_concat, dim=-1)
-        print('x_horizon_fwd:',a.size())
-
-        x = x_horizon_fwd
-        #######
-        # use LSTM vertically upward and downward
-        for j in range(height):
-            vertical_fwd, _ = self.vertical_LSTM(x_horizon_fwd[:, :, :,j])
-            vertical_fwd_concat.append(vertical_fwd)
-        print(len(vertical_fwd_concat))
-        x_vertical_fwd = torch.stack(vertical_fwd_concat, dim=3)
-
-
-        out = self.conv(x_vertical_fwd)
-        out = self.bn(out)
+            h, _ = self.vertical(x[:, :, i, :])
+            vertical_concat.append(h)
+        x = torch.stack(vertical_concat, dim=2)
+        horizontal_concat = []
+        for i in range(width):
+            h, _ = self.horizontal(x[:, i, :, :])
+            horizontal_concat.append(h)
+        x = torch.stack(horizontal_concat, dim=3)
+        x = torch.transpose(x, 1, 2)
+        x = self.conv(x)
+        out = self.bn(x)
         return out
 
 
@@ -99,32 +104,74 @@ class AttentionGlobal(nn.Module):
     """
     Global Attention module.
     """
-    def __init__(self, patch_size, inplane, outplane, renet_outplane=100, renet_LSTM_channel=256):
+    def __init__(self,
+                 inchannel,
+                 att_dilation = 3,
+                 renet_LSTM_channel=256,
+                 global_feature = 10):
         super(AttentionGlobal, self).__init__()
         # outplane should be height * width
-        self.patch_size = patch_size
-        self.renet = Renet(patch_size=patch_size, inplane=inplane,outchannel=outplane) # Set the LSTM channel and output channel.
-        self.softmax = nn.Softmax(dim=1)
+        self.inchannel = inchannel
+        self.global_feature = global_feature
+        self.att_dilation = att_dilation
+        self.renet = Renet(inchannel=inchannel, LSTM_channel=renet_LSTM_channel,
+                           outchannel=global_feature**2) # Set the LSTM channel and output channel.
 
     def forward(self, *input):
         x = input[0]
         #print(x.size())
-        x_size = x.size()
-        x_renet = self.renet(x)
-        # reshape tensor of (batch, channel, w, h) to
-        # (batch, 1, w, h) then do softmax
-        x_renet = x_renet.view(1, 1)
-        print(x_renet.size())
-        x_renet = self.softmax(x_renet)
-        out = x_renet + x
+        size = x.size()
+        assert self.inchannel == size[1]
+        kernel = self.renet(x)
+        kernel = F.softmax(kernel, 1) #do softmax along channel axis.
+        kernel = kernel.reshape(size[0] * size[2] * size[3], 1, 1, self.global_feature, self.global_feature)
+        x = torch.unsqueeze(x, 0)
+        x = F.conv3d(input=x, weight=kernel, bias=None, stride=1,
+                     padding=0, dilation=(1, self.att_dilation, self.att_dilation), groups=size[0])
+        out = torch.reshape(x, (size[0], self.inchannel, size[2], size[3]))
         return out
+
+
+class _AttentionLocal_Conv(nn.Module):
+    def __init__(self, inchannel, conv1_filter, conv1_dilation, conv1_outchannel,
+                 conv_last_outchannel=49,
+                 num_conv=2):
+        """
+
+        :param inchannel: input channel.
+        :param conv1_filter: conv1 filter, current is 7
+        :param conv1_dilation: conv1 dilation, current is 2
+        :param conv1_outchannel: conv1 output channel, current is 128
+        :param conv2_filter:  conv2 output filter, current is 1
+        :param conv2_dilation: conv2 dilation, current 1.
+        :param conv2_outchannel: conv2 output channel, current 49
+        :param num_conv: Number of convolution layer before softmax, current number according to paper is 2.
+        """
+        super(_AttentionLocal_Conv, self).__init__()
+        self.num_conv = num_conv
+        self.padding1 = (conv1_dilation * (conv1_filter-1) - 1) /2
+        self.padding2 = (1 * (1 - 1) - 1) / 2
+        self.conv1 = nn.Conv2d(inchannel, conv1_outchannel, conv1_filter,
+                               dilation=conv1_dilation, padding=self.padding1)
+        self.bn1 = nn.BatchNorm2d(conv1_outchannel)
+        self.conv_last = nn.Conv2d(conv1_outchannel, conv_last_outchannel, 1,
+                               dilation=1, padding=0)
+        self.bn_last = nn.BatchNorm2d(conv_last_outchannel)
+
+    def forward(self, *input):
+        x = input[0]
+        x = self.conv1(x)
+        x = self.bn1(x)
+        x = self.conv_last(x)
+        x = self.bn_last(x)
+        return x
 
 
 class AttentionLocal(nn.Module):
     """
     Local Attention module.
     """
-    def __init__(self, starting_point, width, height, dilation=None):
+    def __init__(self, inchannel, local_feature):
         """
 
         :param starting_point: left upper corner point
@@ -134,17 +181,21 @@ class AttentionLocal(nn.Module):
         :param dilation:
         """
         super(AttentionLocal, self).__init__()
-        self.sofxmax = F.softmax(input, dim=1)
-        self.starting_point = starting_point
-        self.width = width
-        self.height = height
+        self.local_feature = local_feature
+        self.inchannel = inchannel
+        self._conv = _AttentionLocal_Conv(inchannel, conv1_filter=7, conv1_dilation=2,
+                                          conv1_outchannel=256,
+                                          conv_last_outchannel=local_feature**2)
+
 
     def forward(self, *input):
-        x_ori = input[0]
-        x_att = input[1]
-        x_att = x_att[:, self.starting_point: self.starting_point + self.width,
-                        self.starting_point + self.height, :]
-        #print(x_att.size())
-        x_att = self.softmax(x_att)
-        out = x_att + x_ori
+        x = input[0]
+        size = x.size()
+        kernel = self._conv(x)
+        kernel = F.softmax(kernel, dim=1)
+        kernel = kernel.reshape(size[0] * size[2] * size[3], 1, 1, self.local_feature, self.local_feature)
+        x = torch.unsqueeze(x, 0)
+        x = F.conv3d(input=x, weight=kernel, bias=None, stride=1,
+                     padding=0, dilation=(1, self.att_dilation, self.att_dilation), groups=size[0])
+        out = torch.reshape(x, (size[0], self.inchannel, size[2], size[3]))
         return out
