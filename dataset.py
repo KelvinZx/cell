@@ -5,7 +5,6 @@ import glob
 import matplotlib.pyplot as plt
 
 class CRC_joint:
-
     def __init__(self,imgdir,target_size=256):
         self.imgdir = imgdir
         self.target_size = target_size

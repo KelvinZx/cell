@@ -15,7 +15,7 @@ OLD_DATA_DIR = os.path.join(ROOT_DIR, 'CRCHistoPhenotypes_2016_04_28', 'cls_and_
 TRAIN_OLD_DATA_DIR = os.path.join(OLD_DATA_DIR, 'train')
 TEST_OLD_DATA_DIR = os.path.join(OLD_DATA_DIR, 'test')
 VALID_OLD_DATA_DIR = os.path.join(OLD_DATA_DIR, 'validation')
-CROP_TARGET_DATA_DIR = os.path.join(ROOT_DIR, 'crop_cls_and_det')
+CROP_TARGET_DATA_DIR = os.path.join(ROOT_DIR, 'CRCHistoPhenotypes_2016_04_28', 'crop_cls_and_det')
 CROP_TRAIN_TARGET_DATA_DIR = os.path.join(CROP_TARGET_DATA_DIR, 'train')
 CROP_TEST_TARGET_DATA_DIR = os.path.join(CROP_TARGET_DATA_DIR, 'test')
 CROP_VALID_TARGET_DATA_DIR = os.path.join(CROP_TARGET_DATA_DIR, 'validation')
@@ -98,9 +98,9 @@ def batch_image_process(ori_set, target_set, process, stage=None, num_op=None):
                                os.path.join(target_set, str(file) + '_2', str(file) + '_2_original.bmp'),
                                os.path.join(target_set, str(file) + '_3', str(file) + '_3_original.bmp'),
                                os.path.join(target_set, str(file) + '_4', str(file) + '_4_original.bmp')]
-
             for order, img in enumerate(crop_list):
                 check_cv2_imwrite(list_img_create[order], img)
+
         elif process == 'flip':
             aug_lrimage, aug_lrdetmask, aug_lrclsmask = img_aug(image, det_mask, cls_mask, 'fliplr')
             aug_upimage, aug_updetmask, aug_upclsmask = img_aug(image, det_mask, cls_mask, 'flipup')
@@ -193,7 +193,6 @@ def batch_image_process(ori_set, target_set, process, stage=None, num_op=None):
                 check_cv2_imwrite(list_img_create[order], img)
         elif 'channel' in process:
             aug_lrimage, aug_lrdetmask, aug_lrclsmask = img_aug(image, det_mask, cls_mask, 'channel_shift')
-            aug_upimage, aug_updetmask, aug_upclsmask = img_aug(image, det_mask, cls_mask, 'channel_shift')
             list_file_create = [os.path.join(target_set, str(file) + '_c' + str(stage))]
             check_directory(list_file_create)
             list_img_create = [os.path.join(target_set, str(file) + '_c' + str(stage), str(file) + '.bmp'),
@@ -201,10 +200,7 @@ def batch_image_process(ori_set, target_set, process, stage=None, num_op=None):
                                os.path.join(target_set, str(file) + '_c' + str(stage), str(file) + '_classification.bmp'),
                                os.path.join(target_set, str(file) + '_c' + str(stage), str(file) + '_original.bmp')]
 
-            channel_list = [aug_lrimage, aug_upimage,
-                          aug_lrdetmask, aug_updetmask,
-                          aug_lrclsmask, aug_upclsmask,
-                          aug_lrimage, aug_upimage]
+            channel_list = [aug_lrimage, aug_lrdetmask, aug_lrclsmask, aug_lrimage]
             for order, img in enumerate(channel_list):
                 check_cv2_imwrite(list_img_create[order], img)
         elif process == 'random':
@@ -221,6 +217,22 @@ def batch_image_process(ori_set, target_set, process, stage=None, num_op=None):
 
             channel_list = [aug_lrimage, aug_lrdetmask, aug_lrclsmask, aug_lrimage]
             for order, img in enumerate(channel_list):
+                check_cv2_imwrite(list_img_create[order], img)
+        elif process == 'zoom':
+            aug_lrimage, aug_lrdetmask, aug_lrclsmask = img_aug(image, det_mask, cls_mask, 'zoom')
+
+            list_file_create = [os.path.join(target_set, str(file) + '_zoom' + str(stage))
+                                ]
+            check_directory(list_file_create)
+            list_img_create = [os.path.join(target_set, str(file) + '_zoom' + str(stage), str(file) + '.bmp'),
+                               os.path.join(target_set, str(file) + '_zoom' + str(stage), str(file) + '_detection.bmp'),
+                               os.path.join(target_set, str(file) + '_zoom' + str(stage),
+                                            str(file) + '_classification.bmp'),
+                               os.path.join(target_set, str(file) + '_zoom', str(file) + '_original.bmp')
+                               ]
+
+            zoom_list = [aug_lrimage, aug_lrdetmask, aug_lrclsmask, aug_lrimage]
+            for order, img in enumerate(zoom_list):
                 check_cv2_imwrite(list_img_create[order], img)
         else:
             raise ValueError('augmentation type wrong, check documents.')
@@ -399,33 +411,51 @@ class ImageCropping:
             return cropped_img
 
 
+def copy_oriimg_to_new(oriset, targetset):
+    """
+    After augmentation, copy image files from original files into new files.
+    :param oriset:
+    :param targetset:
+    :return:
+    """
+    from shutil import copytree
+    for file in os.listdir(oriset):
+        old_path = os.path.join(oriset, file)
+        new_path = os.path.join(targetset, file)
+        copytree(old_path, new_path)
+
+
+def batch_aug(oriset, targetset, rand_num=None, channel_num=None, zoom_num=None):
+    batch_image_process(oriset, targetset, process='flip')
+    batch_image_process(oriset, targetset, process='rotate')
+    batch_image_process(oriset, targetset, process='shear')
+    for x in range(zoom_num):
+        batch_image_process(oriset, targetset, process='zoom', stage=x)
+    for i in range(rand_num):
+        batch_image_process(oriset,targetset, process='random', stage=i)
+    for j in range(channel_num):
+        batch_image_process(oriset, targetset, process='channel', stage=j)
+
 
 if __name__ == '__main__':
-    batch_image_process(TRAIN_OLD_DATA_DIR, TRAIN_TARGET_DATA_DIR, process='flip')
-    batch_image_process(TRAIN_OLD_DATA_DIR, TRAIN_TARGET_DATA_DIR, process='rotate')
-    batch_image_process(TRAIN_OLD_DATA_DIR, TRAIN_TARGET_DATA_DIR, process='shear')
-    batch_image_process(TRAIN_OLD_DATA_DIR, TRAIN_TARGET_DATA_DIR, process='zoom')
-    batch_image_process(TRAIN_OLD_DATA_DIR, TRAIN_TARGET_DATA_DIR, process='channel', stage=1)
-    batch_image_process(TRAIN_OLD_DATA_DIR, TRAIN_TARGET_DATA_DIR, process='channel', stage=2)
-    batch_image_process(TRAIN_OLD_DATA_DIR, TRAIN_TARGET_DATA_DIR, process='random', stage=1)
-    batch_image_process(TRAIN_OLD_DATA_DIR, TRAIN_TARGET_DATA_DIR, process='random', stage=2)
-    batch_image_process(TRAIN_OLD_DATA_DIR, TRAIN_TARGET_DATA_DIR, process='random', stage=3)
-    batch_image_process(TRAIN_OLD_DATA_DIR, TRAIN_TARGET_DATA_DIR, process='random', stage=4)
-    batch_image_process(TRAIN_OLD_DATA_DIR, TRAIN_TARGET_DATA_DIR, process='random', stage=5)
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--crop", default=False, type=bool)
+    args = parser.parse_args()
+    ifcrop = args.crop
+    rand_num = 5
+    channel_num = 2
+    zoom_num = 2
+    batch_aug(TRAIN_OLD_DATA_DIR, TRAIN_TARGET_DATA_DIR, rand_num=rand_num,
+              channel_num=channel_num, zoom_num=zoom_num)
+    batch_aug(VALID_OLD_DATA_DIR, VALID_TARGET_DATA_DIR, rand_num=rand_num,
+              channel_num=channel_num, zoom_num=zoom_num)
 
-    batch_image_process(VALID_OLD_DATA_DIR, VALID_TARGET_DATA_DIR, process='flip')
-    batch_image_process(VALID_OLD_DATA_DIR, VALID_TARGET_DATA_DIR, process='rotate')
-    batch_image_process(VALID_OLD_DATA_DIR, VALID_TARGET_DATA_DIR, process='shear')
-    batch_image_process(VALID_OLD_DATA_DIR, VALID_TARGET_DATA_DIR, process='zoom')
-    batch_image_process(VALID_OLD_DATA_DIR, VALID_TARGET_DATA_DIR, process='channel', stage=1)
-    batch_image_process(VALID_OLD_DATA_DIR, VALID_TARGET_DATA_DIR, process='channel', stage=2)
-    batch_image_process(VALID_OLD_DATA_DIR, VALID_TARGET_DATA_DIR, process='random', stage=1)
-    batch_image_process(VALID_OLD_DATA_DIR, VALID_TARGET_DATA_DIR, process='random', stage=2)
-    batch_image_process(VALID_OLD_DATA_DIR, VALID_TARGET_DATA_DIR, process='random', stage=3)
-    batch_image_process(VALID_OLD_DATA_DIR, VALID_TARGET_DATA_DIR, process='random', stage=4)
-    batch_image_process(VALID_OLD_DATA_DIR, VALID_TARGET_DATA_DIR, process='random', stage=5)
-
-
+    copy_oriimg_to_new(TRAIN_OLD_DATA_DIR, TRAIN_TARGET_DATA_DIR)
+    copy_oriimg_to_new(VALID_OLD_DATA_DIR, VALID_TARGET_DATA_DIR)
+    if ifcrop == True:
+        batch_image_process(TRAIN_TARGET_DATA_DIR, CROP_TRAIN_TARGET_DATA_DIR, process='crop')
+        batch_image_process(VALID_TARGET_DATA_DIR, CROP_VALID_TARGET_DATA_DIR, process='crop')
 
     #batch_image_process(TRAIN_OLD_DATA_DIR, TRAIN_TARGET_DATA_DIR, process='crop')
     #batch_image_process(VALID_OLD_DATA_DIR, VALID_TARGET_DATA_DIR, process='crop')
