@@ -5,7 +5,6 @@ import glob
 import matplotlib.pyplot as plt
 
 class CRC_joint:
-
     def __init__(self,imgdir,target_size=256):
         self.imgdir = imgdir
         self.target_size = target_size
@@ -100,3 +99,5 @@ class CRC_joint:
         y_train_cls = np.transpose(y_train_cls, (0, 3, 1, 2))
 
         return x_train, y_train_det, y_train_cls
+
+
