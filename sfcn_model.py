@@ -238,14 +238,14 @@ class Attention_Net_Global(nn.Module):
             nn.ConvTranspose2d(32, 5, 2, stride=2),
             nn.BatchNorm2d(5)
         )
-        self.Module1 = Res_Module(32, 32, downsample=False)
+        self.Module1 = Res_Module(32, 32, downsample=True)
         self.Module2 = Res_Module(32, 64, downsample=True)
         self.Module3 = Res_Module(64, 128, downsample=True)
         self.Module4 = Res_Module(128, 128, downsample=False)
         self.att_conv = nn.Conv2d(32, 1, 1)
         self.softmax = nn.Softmax(dim=1)
         self.out = nn.LogSoftmax(dim=1)
-        self.att_global = module.AttentionGlobal(patch_size=16,inplane=32,outplane=1024)
+        self.att_global = module.AttentionGlobal(inchannel=32)
 
     def forward(self, x):
         x = self.conv1(x)
@@ -256,16 +256,21 @@ class Attention_Net_Global(nn.Module):
         y2 = self.conv3(x)
         d1 = self.deconv1(y2)
         s1 = y1 + d1
+        #print('s1:',s1.size())
         att1 = self.att_global(s1)
         x = self.Module4(x)
         y3 = self.conv4(x)
         d3 = self.deconv3(y3)
+        #print('s3:',d3.size())
         att2 = self.att_global(d3)
-        d3_att = d3 * att1
-
-        s1_att = s1 * att2
-        d2 = self.deconv2(s1_att)
+        #d3_att = d3 * att1
+        d3_att = att1
+        #s1_att = s1 * att2
+        s1_att = att2
+        d2_1 = self.deconv3(s1_att)
+        d2 = self.deconv2(d2_1)
         det = self.out(d2)
-        d4 = self.deconv4(d3_att)
+        d4_1 = self.deconv3(d3_att)
+        d4 = self.deconv4(d4_1)
         cls = self.out(d4)
         return det, cls

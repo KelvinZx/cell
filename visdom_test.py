@@ -17,7 +17,7 @@ import math
 
 BATCH_SIZE = Config.image_per_gpu * Config.gpu_count
 epsilon = 1e-7
-TARGET_SIZE = 64
+TARGET_SIZE = 112
 
 def non_max_suppression(img, overlap_thresh=0.1, max_boxes=1200, r=5, prob_thresh=0.85):
     x1s = []
@@ -345,5 +345,5 @@ def train(model, weight_det=None, weight_cls=None,data_dir='',
 
 
 if __name__ == '__main__':
-    net = Net()
+    net = Attention_Net_Global()
     train(net, weight_det=[0.1, 2], weight_cls=[0.1, 4, 3, 6, 10], data_dir='./aug', target_size=TARGET_SIZE)

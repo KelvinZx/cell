@@ -12,43 +12,6 @@ def _isArrayLike(obj):
     return hasattr(obj, '__iter__') and hasattr(obj, '__len__')
 
 
-class PiCANet_L(nn.Module):
-    def __init__(self, in_channel):
-        super(PiCANet_L, self).__init__()
-        self.conv1 = nn.Conv2d(in_channel, 128, kernel_size=7, dilation=2, padding=6)
-        self.conv2 = nn.Conv2d(128, 49, kernel_size=1)
-
-    def forward(self, *input):
-        x = input[0]
-        size = x.size()
-        kernel = self.conv1(x)
-        kernel = self.conv2(kernel)
-        kernel = F.softmax(kernel, 1)
-        kernel = torch.reshape(kernel, (size[0] * size[2] * size[3], 1, 1, 7, 7))
-        # fmap = []
-        # x = torch.unsqueeze(x, 0)
-        x = F.pad(x, (6, 6, 6, 6))
-        # print(torch.cuda.memory_allocated() / 1024 / 1024)
-        patch = x.unfold(2, 13, 1).unfold(3, 13, 1).contiguous().view(1, -1, size[1], 13, 13)
-        # print(torch.cuda.memory_allocated() / 1024 / 1024)
-        x = F.conv3d(input=patch, weight=kernel, bias=None, stride=1, padding=0, dilation=(1, 2, 2),
-                     groups=size[0] * size[2] * size[3])
-        x = x.view(size[0], size[1], size[2], size[3])
-        """
-        for i in range(size[2]):
-            for j in range(size[3]):
-                print(torch.cuda.memory_allocated() / 1024 / 1024)
-                pix = F.conv3d(input=F.pad(x, (6 - j, 7 + j - size[3], 6 - i, 7 + i - size[2])),
-                               weight=kernel[:, :, :, :, :, i, j],
-                               dilation=(1, 2, 2), groups=size[0])
-                print(torch.cuda.memory_allocated() / 1024 / 1024)
-                fmap.append(pix)
-        x = torch.cat(fmap, 3)
-        x = torch.reshape(x, (size[0], size[1], size[2], size[3]))
-        """
-        return x
-
-
 class Renet(nn.Module):
     """
     This Renet is implemented according to paper
@@ -67,15 +30,15 @@ class Renet(nn.Module):
         # Please change this number manually.
         #################
         super(Renet, self).__init__()
-        self.horizontal_LSTM = nn.LSTM(input_size=inchannel,
-                                       hidden_size=LSTM_channel,
-                                       batch_first=True,
-                                       bidirectional=True)
         self.vertical_LSTM = nn.LSTM(input_size=inchannel,
                                      hidden_size=LSTM_channel,
                                      batch_first=True,
                                      bidirectional=True)
-        self.conv = nn.Conv2d(LSTM_channel, outchannel, 1)
+        self.horizontal_LSTM = nn.LSTM(input_size=2 * LSTM_channel,
+                                       hidden_size=LSTM_channel,
+                                       batch_first=True,
+                                       bidirectional=True)
+        self.conv = nn.Conv2d(2 * LSTM_channel, outchannel, 1)
         self.bn = nn.BatchNorm2d(outchannel)
 
     def forward(self, *input):
@@ -86,17 +49,19 @@ class Renet(nn.Module):
         assert width == height
         x = torch.transpose(x, 1, 3)
         for i in range(width):
-            h, _ = self.vertical(x[:, :, i, :])
+            h, _ = self.vertical_LSTM(x[:, :, i, :])
             vertical_concat.append(h)
         x = torch.stack(vertical_concat, dim=2)
+        #print(x.size())
         horizontal_concat = []
         for i in range(width):
-            h, _ = self.horizontal(x[:, i, :, :])
+            h, _ = self.horizontal_LSTM(x[:, i, :, :])
             horizontal_concat.append(h)
         x = torch.stack(horizontal_concat, dim=3)
         x = torch.transpose(x, 1, 2)
         x = self.conv(x)
         out = self.bn(x)
+        #print(out.size())
         return out
 
 
@@ -125,9 +90,13 @@ class AttentionGlobal(nn.Module):
         kernel = self.renet(x)
         kernel = F.softmax(kernel, 1) #do softmax along channel axis.
         kernel = kernel.reshape(size[0] * size[2] * size[3], 1, 1, self.global_feature, self.global_feature)
+        #print('kernel:', kernel.size())
         x = torch.unsqueeze(x, 0)
+        #print(x.size())
         x = F.conv3d(input=x, weight=kernel, bias=None, stride=1,
                      padding=0, dilation=(1, self.att_dilation, self.att_dilation), groups=size[0])
+        #print(x.size())
+
         out = torch.reshape(x, (size[0], self.inchannel, size[2], size[3]))
         return out
 
