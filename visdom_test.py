@@ -17,7 +17,7 @@ import math
 
 BATCH_SIZE = Config.image_per_gpu * Config.gpu_count
 epsilon = 1e-7
-TARGET_SIZE = 112
+TARGET_SIZE = 224
 
 def non_max_suppression(img, overlap_thresh=0.1, max_boxes=1200, r=5, prob_thresh=0.85):
     x1s = []
@@ -228,7 +228,8 @@ def train(model, weight_det=None, weight_cls=None,data_dir='',
     val_cls_r = []
     val_cls_f = []
     epoch_list = []
-    vis = visdom.Visdom(env=u'test1')
+    vis = visdom.Visdom(env=u'det')
+    vis_joint = visdom.Visdom(env=u'joint')
 
     for epoch in range(num_epochs):
 
@@ -258,14 +259,14 @@ def train(model, weight_det=None, weight_cls=None,data_dir='',
             optimizer.zero_grad()
             train_det_out, train_cls_out = model(train_imgs)
             t_det_loss = NLLLoss_det(train_det_out, train_det_masks)
-            t_cls_loss = NLLLoss_cls(train_cls_out, train_cls_masks)
-            t_loss = t_det_loss + t_cls_loss
+            #t_cls_loss = NLLLoss_cls(train_cls_out, train_cls_masks)
+            t_loss = t_det_loss #+ t_cls_loss
             t_loss.backward()
             optimizer.step()
             train_loss += t_loss.item()
 
             if i % 10 == 9:
-                print('epoch: %3d, step: %3d loss: %.5f' % (epoch + 1, i + 1, train_loss / 10))
+                print('det epoch: %3d, step: %3d loss: %.5f' % (epoch + 1, i + 1, train_loss / 10))
                 train_loss_list.append(train_loss/10)
                 train_step_list.append((train_steps * epoch + i + 1))
 
@@ -308,7 +309,7 @@ def train(model, weight_det=None, weight_cls=None,data_dir='',
                     torch.save(model.state_dict(), './ckpt/test_att_global.pkl')
                 end = time.time()
                 time_spent = end - start
-                print('epoch: %3d, time: %.5f val_loss: %.5f' % (epoch + 1, time_spent, val_loss))
+                print('det epoch: %3d, time: %.5f val_loss: %.5f' % (epoch + 1, time_spent, val_loss))
                 val_loss_list.append(val_loss)
                 epoch_list.append(epoch + 1)
 
@@ -343,7 +344,119 @@ def train(model, weight_det=None, weight_cls=None,data_dir='',
                 vis._send({'data': [trace_cls_p, trace_cls_r], 'layout': layout, 'win': 'valclspr'})
                 print('******************************************************************************')
 
+    for epoch in range(num_epochs):
+
+        start = time.time()
+        train_loss = 0.0
+        val_loss = 0.0
+        for i, datapack in enumerate(train_loader, 0):
+            train_imgs = datapack[:, 0:3]
+            train_det_masks = datapack[:, 3:4]
+            train_cls_masks = datapack[:, 4:]
+
+            train_det_masks = train_det_masks.long()
+            train_cls_masks = train_cls_masks.long()
+
+            train_det_masks = train_det_masks.view(
+                train_det_masks.size()[0],
+                train_det_masks.size()[2],
+                train_det_masks.size()[3]
+            )
+
+            train_cls_masks = train_cls_masks.view(
+                train_cls_masks.size()[0],
+                train_cls_masks.size()[2],
+                train_cls_masks.size()[3]
+            )
+
+            optimizer.zero_grad()
+            train_det_out, train_cls_out = model(train_imgs)
+            t_det_loss = NLLLoss_det(train_det_out, train_det_masks)
+            t_cls_loss = NLLLoss_cls(train_cls_out, train_cls_masks)
+            t_loss = 0.3 * t_det_loss + 0.7 * t_cls_loss
+            t_loss.backward()
+            optimizer.step()
+            train_loss += t_loss.item()
+
+            if i % 10 == 9:
+                print('joint epoch: %3d, step: %3d loss: %.5f' % (epoch + 1, i + 1, train_loss / 10))
+                train_loss_list.append(train_loss/10)
+                train_step_list.append((train_steps * epoch + i + 1))
+
+                trace_p = dict(x=train_step_list, y=train_loss_list, mode="lines", type='custom', name='train_loss')
+                layout = dict(title="train loss", xaxis={'title': 'step'}, yaxis={'title': 'loss'})
+
+                vis_joint._send({'data': [trace_p], 'layout': layout, 'win': 'trainloss'})
+                train_loss = 0.0
+
+        for i, datapack in enumerate(val_loader, 0):
+            val_imgs = datapack[:, 0:3]
+            val_det_masks = datapack[:, 3:4]
+            val_cls_masks = datapack[:, 4:]
+
+            val_det_masks = val_det_masks.long()
+            val_det_masks = val_det_masks.view(
+                val_det_masks.size()[0],
+                val_det_masks.size()[2],
+                val_det_masks.size()[3]
+            )
+
+            val_cls_masks = val_cls_masks.long()
+            val_cls_masks = val_cls_masks.view(
+                val_cls_masks.size()[0],
+                val_cls_masks.size()[2],
+                val_cls_masks.size()[3]
+            )
+
+            # optimizer.zero_grad()
+            val_det_out, val_cls_out = model(val_imgs)
+            v_det_loss = NLLLoss_det(val_det_out, val_det_masks)
+            v_cls_loss = NLLLoss_cls(val_cls_out, val_cls_masks)
+            v_loss = v_det_loss + v_cls_loss
+            val_loss += v_loss.item()
+
+            if i % val_steps == val_steps - 1:
+                val_loss = val_loss / val_steps
+                if val_loss < best_loss:
+                    best_loss = val_loss
+                    torch.save(model.state_dict(), './ckpt/test_att_global.pkl')
+                end = time.time()
+                time_spent = end - start
+                print('joint epoch: %3d, time: %.5f val_loss: %.5f' % (epoch + 1, time_spent, val_loss))
+                val_loss_list.append(val_loss)
+                epoch_list.append(epoch + 1)
+
+                trace_p = dict(x=epoch_list, y=val_loss_list, mode='lines', type='custom', name='val_loss')
+                layout = dict(title='val loss', xaxis={'title': 'epoch'}, yaxis={'title': 'loss'})
+                vis_joint._send({'data': [trace_p], 'layout': layout, 'win': 'valloss'})
+
+                val_loss = 0.0
+                p, r, f = MyMetrics(model, target_size=target_size)
+                print('p:', p)
+                print('r:', r)
+                print('f:', f)
+                val_det_p.append(p[0])
+                val_det_r.append(r[0])
+                val_det_f.append(f[0])
+                val_cls_p.append(p[1])
+                val_cls_r.append(r[1])
+                val_cls_f.append(f[1])
+                trace_det_f = dict(x=epoch_list, y=val_det_f, mode='lines', type='custom', name='val_det_f')
+                layout = dict(title='val det f', xaxis={'title': 'epoch'}, yaxis={'title': 'F'})
+                vis_joint._send({'data': [trace_det_f], 'layout': layout, 'win': 'valdetf'})
+                trace_det_p = dict(x=epoch_list, y=val_det_p, mode='lines', type='custom', name='val_det_p')
+                trace_det_r = dict(x=epoch_list, y=val_det_r, mode='lines', type='custom', name='val_det_r')
+                layout = dict(title='val det pr', xaxis={'title': 'epoch'}, yaxis={'title': 'PR'})
+                vis_joint._send({'data': [trace_det_p,trace_det_r], 'layout': layout, 'win': 'valdetpr'})
+                trace_p = dict(x=epoch_list, y=val_cls_f, mode='lines', type='custom', name='val_cls_f')
+                layout = dict(title='val cls f', xaxis={'title': 'epoch'}, yaxis={'title': 'F'})
+                vis_joint._send({'data': [trace_p], 'layout': layout, 'win': 'valclsf'})
+                trace_cls_p = dict(x=epoch_list, y=val_cls_p, mode='lines', type='custom', name='val_cls_p')
+                trace_cls_r = dict(x=epoch_list, y=val_cls_r, mode='lines', type='custom', name='val_cls_r')
+                layout = dict(title='val cls pr', xaxis={'title': 'epoch'}, yaxis={'title': 'PR'})
+                vis_joint._send({'data': [trace_cls_p, trace_cls_r], 'layout': layout, 'win': 'valclspr'})
+                print('******************************************************************************')
 
 if __name__ == '__main__':
     net = Attention_Net_Global()
-    train(net, weight_det=[0.1, 2], weight_cls=[0.1, 4, 3, 6, 10], data_dir='./aug', target_size=TARGET_SIZE)
+    train(net, weight_det=[0.1, 2], weight_cls=[0.1, 4, 3, 6, 10], data_dir='./aug', target_size=TARGET_SIZE, num_epochs=200)

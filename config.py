@@ -12,7 +12,7 @@ class Config(object):
     parser.add_argument("--gpu2", default='1', type=str)
     parser.add_argument("--gpu3", default='2', type=str)
     parser.add_argument("--gpu4", default='3', type=str)
-    parser.add_argument("--image_per_gpu", type=int, default=1)
+    parser.add_argument("--image_per_gpu", type=int, default=2)
     parser.add_argument("--epoch", default=300, type=int)
     parser.add_argument("--det_loss_weight", default=1, type=int)
     parser.add_argument("--type", default='focal')

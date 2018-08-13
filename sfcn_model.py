@@ -242,6 +242,7 @@ class Attention_Net_Global(nn.Module):
         self.Module2 = Res_Module(32, 64, downsample=True)
         self.Module3 = Res_Module(64, 128, downsample=True)
         self.Module4 = Res_Module(128, 128, downsample=False)
+
         self.att_conv = nn.Conv2d(32, 1, 1)
         self.softmax = nn.Softmax(dim=1)
         self.out = nn.LogSoftmax(dim=1)
@@ -253,17 +254,25 @@ class Attention_Net_Global(nn.Module):
         x = self.Module2(x)
         y1 = self.conv2(x)
         x = self.Module3(x)
-        y2 = self.conv3(x)
+        y_m4 = self.Module4(x)
+        y2 = self.conv3(y_m4)
         d1 = self.deconv1(y2)
+
         s1 = y1 + d1
-        #print('s1:',s1.size())
-        att1 = self.att_global(s1)
+        att1 = self.att_global(y2)
         x = self.Module4(x)
         y3 = self.conv4(x)
-        d3 = self.deconv3(y3)
-        #print('s3:',d3.size())
-        att2 = self.att_global(d3)
-        #d3_att = d3 * att1
+        cls_att = att1 * y3
+
+        det_2 = self.deconv3(s1)
+        det_1 = self.deconv2(det_2)
+        det  =self.out(det_1)
+
+        cls_4 = self.deconv3(cls_att)
+        cls_2 = self.deconv3(cls_4)
+        cls_1 = self.deconv4(cls_2)
+        cls = self.out(cls_1)
+        '''
         d3_att = att1
         #s1_att = s1 * att2
         s1_att = att2
@@ -273,4 +282,5 @@ class Attention_Net_Global(nn.Module):
         d4_1 = self.deconv3(d3_att)
         d4 = self.deconv4(d4_1)
         cls = self.out(d4)
+        '''
         return det, cls
