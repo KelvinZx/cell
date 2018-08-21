@@ -4,6 +4,65 @@ import os
 import glob
 import matplotlib.pyplot as plt
 
+def _image_normalization(image, preprocess_num):
+    image = image - preprocess_num
+    image = image / preprocess_num
+    return image
+
+def _torch_image_transpose(images, type='image'):
+    """
+
+    :param image:
+    :param type:
+    :return:
+    """
+    images = np.array(images)
+    images = np.transpose(images, (0, 3, 1, 2))
+    return images
+
+
+def load_data(dataset, type, reshape_size=None, det=True, cls=True, preprocss_num=128.):
+    """
+    Load dataset from files
+    :param type: either train, test or validation.
+    :param reshape_size: reshape to (512, 512) if cropping images are using.
+    :param det: True if detection masks needed.
+    :param cls: True if classification masks needed.
+    :param preprocss_num: number to subtract and divide in normalization step.
+    """
+    path = os.path.join(dataset, type)
+    imgs, det_masks, cls_masks = [], [], []
+    for i, file in enumerate(os.listdir(path)):
+        for j, img_file in enumerate(os.listdir(os.path.join(path, file))):
+            if 'original.bmp' in img_file:
+                img_path = os.path.join(path, file, img_file)
+                img = misc.imread(img_path)
+                if reshape_size is not None:
+                    img = misc.imresize(img, reshape_size, interp='nearest')
+                img = _image_normalization(img, preprocss_num)
+                imgs.append(img)
+            if 'detection.bmp' in img_file and det is True and 'verifiy' not in img_file:
+                det_mask_path = os.path.join(path, file, img_file)
+                det_mask = misc.imread(det_mask_path, mode='L')
+                if reshape_size is not None:
+                    det_mask = misc.imresize(det_mask, reshape_size, interp='nearest')
+                det_mask = det_mask.reshape(det_mask.shape[0], det_mask.shape[1], 1)
+                det_masks.append(det_mask)
+
+            if 'classification.bmp' in img_file and cls is True and 'verifiy' not in img_file:
+                cls_mask_path = os.path.join(path, file, img_file)
+                cls_mask = misc.imread(cls_mask_path, mode='L')
+                if reshape_size != None:
+                    cls_mask = misc.imresize(cls_mask, reshape_size, interp='nearest')
+                cls_mask = cls_mask.reshape(cls_mask.shape[0], cls_mask.shape[1], 1)
+                cls_masks.append(cls_mask)
+
+    print(len(imgs), len(det_masks), len(cls_masks))
+    imgs = _torch_image_transpose(imgs)
+    det_masks = _torch_image_transpose(det_masks)
+    cls_masks = _torch_image_transpose(cls_masks)
+    return imgs, det_masks, cls_masks
+
 class CRC_joint:
     def __init__(self,imgdir,target_size=256):
         self.imgdir = imgdir
