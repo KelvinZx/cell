@@ -4,90 +4,34 @@ import numpy as np
 import torch.nn as nn
 import torch.optim as optim
 import module
+from module import Identity_block, Strided_block, Conv_1x1
 from config import Config
 
 epsilon = 1e-7
-
-class identity_block(nn.Module):
-    '''(Conv=>BN=>ReLU)*2'''
-
-    def __init__(self, in_ch, out_ch):
-        super(identity_block, self).__init__()
-        self.conv = nn.Sequential(
-            nn.Conv2d(in_ch, out_ch, 3, padding=1),
-            nn.BatchNorm2d(out_ch),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(out_ch, out_ch, 3, padding=1),
-            nn.BatchNorm2d(out_ch),
-            nn.ReLU(inplace=True)
-        )
-        self.relu = nn.ReLU(inplace=True)
-
-    def forward(self, x):
-        residual = x
-        y = self.conv(x)
-        y = residual + y
-        y = self.relu(y)
-        return y
-
-class strided_block(nn.Module):
-    '''downsample featuremap between modules'''
-
-    def __init__(self, in_ch, out_ch):
-        super(strided_block, self).__init__()
-        self.conv = nn.Sequential(
-            nn.Conv2d(in_ch, out_ch, 3, stride=2, padding=1),
-            nn.BatchNorm2d(out_ch),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(out_ch, out_ch, 3 ,padding=1),
-            nn.BatchNorm2d(out_ch),
-            nn.ReLU(inplace=True)
-        )
-        self.downsample = nn.Conv2d(in_ch, out_ch, 3, stride=2, padding=1)
-        self.relu = nn.ReLU(inplace=True)
-
-    def forward(self, x):
-        residual = self.downsample(x)
-        y = self.conv(x)
-        y = residual + y
-        y = self.relu(y)
-        return y
-
-class conv_1x1(nn.Module):
-    def __init__(self, in_ch, out_ch):
-        super(conv_1x1, self).__init__()
-        self.conv = nn.Sequential(
-            nn.Conv2d(in_ch, out_ch, 1),
-            nn.BatchNorm2d(out_ch),
-            nn.ReLU(inplace=True)
-        )
-
-    def forward(self, x):
-        x = self.conv(x)
-        return x
 
 class Res_Module(nn.Module):
     def __init__(self, in_ch, out_ch, downsample=True):
         super(Res_Module, self).__init__()
         if downsample:
-            self.conv1 = strided_block(in_ch, out_ch)
+            self.conv1 = Strided_block(in_ch, out_ch)
         else:
-            self.conv1 = identity_block(in_ch, out_ch)
+            self.conv1 = Identity_block(in_ch, out_ch)
         self.conv2 = nn.Sequential(
-            identity_block(out_ch, out_ch),
-            identity_block(out_ch, out_ch),
-            identity_block(out_ch, out_ch),
-            identity_block(out_ch, out_ch),
-            identity_block(out_ch, out_ch),
-            identity_block(out_ch, out_ch),
-            identity_block(out_ch, out_ch),
-            identity_block(out_ch, out_ch),
+            Identity_block(out_ch, out_ch),
+            Identity_block(out_ch, out_ch),
+            Identity_block(out_ch, out_ch),
+            Identity_block(out_ch, out_ch),
+            Identity_block(out_ch, out_ch),
+            Identity_block(out_ch, out_ch),
+            Identity_block(out_ch, out_ch),
+            Identity_block(out_ch, out_ch),
         )
 
     def forward(self, x):
         x = self.conv1(x)
         x = self.conv2(x)
         return x
+
 
 class Net(nn.Module):
     def __init__(self):
@@ -97,9 +41,9 @@ class Net(nn.Module):
             nn.BatchNorm2d(32),
             nn.ReLU(inplace=True)
         )
-        self.conv2 = conv_1x1(64, 2)
-        self.conv3 = conv_1x1(128, 2)
-        self.conv4 = conv_1x1(128, 5)
+        self.conv2 = Conv_1x1(64, 2)
+        self.conv3 = Conv_1x1(128, 2)
+        self.conv4 = Conv_1x1(128, 5)
         self.deconv1 = nn.Sequential(
             nn.ConvTranspose2d(2, 2, 2, stride=2),
             nn.BatchNorm2d(2),
@@ -151,9 +95,9 @@ class Attention_Net(nn.Module):
             nn.BatchNorm2d(32),
             nn.ReLU(inplace=True)
         )
-        self.conv2 = conv_1x1(64, 32)
-        self.conv3 = conv_1x1(128, 32)
-        self.conv4 = conv_1x1(128, 32)
+        self.conv2 = Conv_1x1(64, 32)
+        self.conv3 = Conv_1x1(128, 32)
+        self.conv4 = Conv_1x1(128, 32)
         self.deconv1 = nn.Sequential(
             nn.ConvTranspose2d(32, 32, 2, stride=2),
             nn.BatchNorm2d(32),
@@ -217,9 +161,9 @@ class Attention_Net_Global(nn.Module):
             nn.BatchNorm2d(32),
             nn.ReLU(inplace=True)
         )
-        self.conv2 = conv_1x1(64, 32)
-        self.conv3 = conv_1x1(128, 32)
-        self.conv4 = conv_1x1(128, 32)
+        self.conv2 = Conv_1x1(64, 32)
+        self.conv3 = Conv_1x1(128, 32)
+        self.conv4 = Conv_1x1(128, 32)
         self.deconv1 = nn.Sequential(
             nn.ConvTranspose2d(32, 32, 2, stride=2),
             nn.BatchNorm2d(32),
