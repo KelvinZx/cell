@@ -168,3 +168,168 @@ class AttentionLocal(nn.Module):
                      padding=0, dilation=(1, self.att_dilation, self.att_dilation), groups=size[0])
         out = torch.reshape(x, (size[0], self.inchannel, size[2], size[3]))
         return out
+
+
+class Identity_block(nn.Module):
+    '''(Conv=>BN=>ReLU)*2'''
+
+    def __init__(self, in_ch, out_ch):
+        super(Identity_block, self).__init__()
+        self.conv = nn.Sequential(
+            nn.Conv2d(in_ch, out_ch, 3, padding=1),
+            nn.BatchNorm2d(out_ch),
+            nn.ReLU(),
+            nn.Conv2d(out_ch, out_ch, 3, padding=1),
+            nn.BatchNorm2d(out_ch),
+            nn.ReLU()
+        )
+        self.relu = nn.ReLU()
+
+    def forward(self, x):
+        residual = x
+        y = self.conv(x)
+        y = residual + y
+        y = self.relu(y)
+        return y
+
+
+class Strided_block(nn.Module):
+    '''downsample featuremap between modules'''
+
+    def __init__(self, in_ch, out_ch):
+        super(Strided_block, self).__init__()
+        self.conv = nn.Sequential(
+            nn.Conv2d(in_ch, out_ch, 3, stride=2, padding=1),
+            nn.BatchNorm2d(out_ch),
+            nn.ReLU(),
+            nn.Conv2d(out_ch, out_ch, 3 ,padding=1),
+            nn.BatchNorm2d(out_ch),
+            nn.ReLU()
+        )
+        self.downsample = nn.Conv2d(in_ch, out_ch, 3, stride=2, padding=1)
+        self.relu = nn.ReLU()
+
+    def forward(self, x):
+        residual = self.downsample(x)
+        y = self.conv(x)
+        y = residual + y
+        y = self.relu(y)
+        return y
+
+
+class Conv_1x1(nn.Module):
+    def __init__(self, in_ch, out_ch):
+        super(Conv_1x1, self).__init__()
+        self.conv = nn.Sequential(
+            nn.Conv2d(in_ch, out_ch, 1),
+            nn.BatchNorm2d(out_ch),
+            nn.ReLU()
+        )
+
+    def forward(self, x):
+        x = self.conv(x)
+        return x
+
+
+class Res_Module(nn.Module):
+    def __init__(self, in_ch, out_ch, block_num=9, downsample=True):
+        super(Res_Module, self).__init__()
+        self.block_num = block_num - 1
+        if downsample:
+            self.conv1 = Strided_block(in_ch, out_ch)
+        else:
+            self.conv1 = Identity_block(in_ch, out_ch)
+        self.id_block = nn.Sequential(
+            Identity_block(out_ch, out_ch),
+            Identity_block(out_ch, out_ch),
+            Identity_block(out_ch, out_ch),
+            Identity_block(out_ch, out_ch),
+            Identity_block(out_ch, out_ch),
+            Identity_block(out_ch, out_ch),
+            Identity_block(out_ch, out_ch),
+            Identity_block(out_ch, out_ch),
+        )
+
+    def forward(self, x):
+        x = self.conv1(x)
+        x = self.id_block(x)
+        return x
+
+
+class Dilated_bottleneck(nn.Module):
+    """
+    Dilated block without 1x1 convolution projection, structure like res-id-block
+    """
+    def __init__(self, channel):
+        super(Dilated_bottleneck, self).__init__()
+        self.conv = nn.Sequential(
+            nn.Conv2d(channel, channel, 1, padding=0),
+            nn.BatchNorm2d(channel),
+            nn.ReLU(),
+            nn.Conv2d(channel, channel, 3, dilation=3, padding=1),
+            nn.BatchNorm2d(channel),
+            nn.ReLU(),
+            nn.Conv2d(channel, channel, 1, padding=0),
+            nn.BatchNorm2d(channel),
+            nn.ReLU()
+        )
+        self.relu = nn.ReLU()
+
+    def forward(self, *input):
+        x = input[0]
+        x_ori = x
+        x = self.conv(x)
+        x = x + x_ori
+        x = self.relu(x)
+        return x
+
+
+class Dilated_with_projection(nn.Module):
+    """
+    Dilated block with 1x1 convolution projection for the shortcut, structure like res-conv-block
+    """
+    def __init__(self, channel):
+        super(Dilated_with_projection, self).__init__()
+        self.conv = nn.Sequential(
+            nn.Conv2d(channel, channel, 1, padding=0),
+            nn.BatchNorm2d(channel),
+            nn.ReLU(),
+            nn.Conv2d(channel, channel, 3, dilation=3, padding=1),
+            nn.BatchNorm2d(channel),
+            nn.ReLU(),
+            nn.Conv2d(channel, channel, 1, padding=0),
+            nn.BatchNorm2d(channel),
+            nn.ReLU()
+        )
+        self.shortcut = nn.Sequential(
+            nn.Conv2d(channel, channel, 1, padding=0),
+            nn.BatchNorm2d(channel),
+        )
+        self.relu = nn.ReLU()
+
+    def forward(self, *input):
+        x = input[0]
+        x_ori = x
+        x_ori = self.shortcut(x)
+        x = self.conv(x)
+        x = x + x_ori
+        x = self.relu(x)
+        return x
+
+
+class Dilated_Det_Module(nn.Module):
+    """
+
+    """
+    def __init__(self, channel):
+        super(Dilated_Det_Module, self).__init__()
+        self.dilated_with_project = Dilated_with_projection(channel)
+        self.dilate_bottleneck1 = Dilated_bottleneck(channel)
+        self.dilate_bottleneck2 = Dilated_bottleneck(channel)
+
+    def forward(self, *input):
+        x = input[0]
+        x = self.dilated_with_project(x)
+        x = self.dilate_bottleneck1(x)
+        x = self.dilate_bottleneck2(x)
+        return x
