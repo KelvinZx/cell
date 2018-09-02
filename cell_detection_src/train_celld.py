@@ -16,6 +16,8 @@ import scipy.misc as misc
 import scipy.io as sio
 import cv2
 import math
+from dataset import load_data
+from util import DATA_DIR
 
 BATCH_SIZE = Config.image_per_gpu * Config.gpu_count
 epsilon = 1e-7
@@ -98,11 +100,13 @@ def train(model, weight_det=None, weight_cls=None,data_dir='',
         weight_cls = torch.Tensor(weight_cls)
 
     data = dataset.CRC_joint(data_dir, target_size=target_size)
-    x_train, y_train_det, y_train_cls = data.load_train(preprocess=preprocess)
+
+    x_train, y_train_det, y_train_cls = load_data(DATA_DIR, 'train', reshape_size=(256,256))
+    #x_train, y_train_det, y_train_cls = data.load_train(preprocess=preprocess)
     train_count = len(x_train)
     train_steps = math.ceil(train_count / BATCH_SIZE)
-
-    x_val, y_val_det, y_val_cls = data.load_val(preprocess=preprocess)
+    x_val, y_val_det, y_val_cls = load_data(DATA_DIR, 'validation', reshape_size=(256, 256))
+    #x_val, y_val_det, y_val_cls = data.load_val(preprocess=preprocess)
     val_count = len(x_val)
     val_steps = int(val_count / BATCH_SIZE)
     print('training imgs:', train_count)
@@ -152,7 +156,6 @@ def train(model, weight_det=None, weight_cls=None,data_dir='',
             train_cls_masks = datapack[:, 4:]
 
             train_det_masks = train_det_masks.long()
-            train_cls_masks = train_cls_masks.long()
 
             train_det_masks = train_det_masks.view(
                 train_det_masks.size()[0],
@@ -160,14 +163,9 @@ def train(model, weight_det=None, weight_cls=None,data_dir='',
                 train_det_masks.size()[3]
             )
 
-            train_cls_masks = train_cls_masks.view(
-                train_cls_masks.size()[0],
-                train_cls_masks.size()[2],
-                train_cls_masks.size()[3]
-            )
 
             optimizer.zero_grad()
-            train_det_out, train_cls_out = model(train_imgs)
+            train_det_out= model(train_imgs)
             t_det_loss = NLLLoss_det(train_det_out, train_det_masks)
             #t_cls_loss = NLLLoss_cls(train_cls_out, train_cls_masks)
             t_loss = t_det_loss #+ t_cls_loss
@@ -198,18 +196,10 @@ def train(model, weight_det=None, weight_cls=None,data_dir='',
                 val_det_masks.size()[3]
             )
 
-            val_cls_masks = val_cls_masks.long()
-            val_cls_masks = val_cls_masks.view(
-                val_cls_masks.size()[0],
-                val_cls_masks.size()[2],
-                val_cls_masks.size()[3]
-            )
-
             # optimizer.zero_grad()
-            val_det_out, val_cls_out = model(val_imgs)
+            val_det_out = model(val_imgs)
             v_det_loss = NLLLoss_det(val_det_out, val_det_masks)
-            v_cls_loss = NLLLoss_cls(val_cls_out, val_cls_masks)
-            v_loss = v_det_loss + v_cls_loss
+            v_loss = v_det_loss
             val_loss += v_loss.item()
 
             if i % val_steps == val_steps - 1:
