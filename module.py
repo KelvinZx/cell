@@ -260,13 +260,13 @@ class Dilated_bottleneck(nn.Module):
     """
     Dilated block without 1x1 convolution projection, structure like res-id-block
     """
-    def __init__(self, channel):
+    def __init__(self, channel, dilate_rate=2):
         super(Dilated_bottleneck, self).__init__()
         self.conv = nn.Sequential(
             nn.Conv2d(channel, channel, 1, padding=0),
             nn.BatchNorm2d(channel),
             nn.ReLU(),
-            nn.Conv2d(channel, channel, 3, dilation=3, padding=1),
+            nn.Conv2d(channel, channel, 3, dilation=dilate_rate, padding=1),
             nn.BatchNorm2d(channel),
             nn.ReLU(),
             nn.Conv2d(channel, channel, 1, padding=0),
@@ -288,13 +288,13 @@ class Dilated_with_projection(nn.Module):
     """
     Dilated block with 1x1 convolution projection for the shortcut, structure like res-conv-block
     """
-    def __init__(self, channel):
+    def __init__(self, channel, dilate_rate=2):
         super(Dilated_with_projection, self).__init__()
         self.conv = nn.Sequential(
             nn.Conv2d(channel, channel, 1, padding=0),
             nn.BatchNorm2d(channel),
             nn.ReLU(),
-            nn.Conv2d(channel, channel, 3, dilation=3, padding=1),
+            nn.Conv2d(channel, channel, 3, dilation=dilate_rate, padding=1),
             nn.BatchNorm2d(channel),
             nn.ReLU(),
             nn.Conv2d(channel, channel, 1, padding=0),
@@ -310,7 +310,7 @@ class Dilated_with_projection(nn.Module):
     def forward(self, *input):
         x = input[0]
         x_ori = x
-        x_ori = self.shortcut(x)
+        x_ori = self.shortcut(x_ori)
         x = self.conv(x)
         x = x + x_ori
         x = self.relu(x)

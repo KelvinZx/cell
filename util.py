@@ -11,6 +11,15 @@ import imgaug as ia
 from config import Config
 
 
+ROOT_DIR = os.getcwd()
+if ROOT_DIR.endswith('src'):
+    ROOT_DIR = os.path.dirname(ROOT_DIR)
+
+DATA_DIR = os.path.join(ROOT_DIR, 'CRCHistoPhenotypes_2016_04_28', 'cls_and_det')
+TENSORBOARD_DIR = os.path.join(ROOT_DIR, 'tensorboard_logs')
+CHECKPOINT_DIR = os.path.join(ROOT_DIR, 'checkpoint')
+
+
 def _isArrayLike(obj):
     """
     check if this is array like object.
@@ -134,23 +143,6 @@ def heavy_aug_on_fly(img, det_mask):
 
             ])])
             #elasitic_sometime(
-             #   iaa.ElasticTransformation(alpha=(0.5, 3.5), sigma=0.25), random_order=True])
-        """
-                    edge_detect_sometime(iaa.OneOf([
-                        iaa.EdgeDetect(alpha=(0, 0.7)),
-                        iaa.DirectedEdgeDetect(alpha=(0,0.7), direction=(0.0, 1.0)
-                                               )
-                    ])),
-                    add_gauss_noise(iaa.AdditiveGaussianNoise(loc=0,
-                                                              scale=(0.0, 0.05*255),
-                                                              per_channel=0.5)
-                                    ),
-                    iaa.Sometimes(0.3,
-                                  iaa.GaussianBlur(sigma=(0, 0.5))
-                                  ),
-                    elasitic_sometime(
-                        iaa.ElasticTransformation(alpha=(0.5, 3.5), sigma=0.25)
-                    """
         seq_to_deterministic = seq.to_deterministic()
         aug_img = seq_to_deterministic.augment_images(image)
         aug_det_mask = seq_to_deterministic.augment_images(det_masks)
