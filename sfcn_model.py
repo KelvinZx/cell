@@ -9,6 +9,7 @@ from config import Config
 
 epsilon = 1e-7
 
+
 class Res_Module(nn.Module):
     def __init__(self, in_ch, out_ch, downsample=True):
         super(Res_Module, self).__init__()
